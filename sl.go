@@ -1,4 +1,6 @@
-package slog_key
+// Package sl расширяет стандартные атрибуты slog (slog.String, slog.Int итд.)
+// и предоставляет удобные конструкторы для ошибок, паник и компонентов.
+package sl
 
 import (
 	"log/slog"
@@ -7,57 +9,58 @@ import (
 )
 
 const (
-	errorKey     = "error"
-	componentKey = "component"
-	methodKey    = "method"
-	elapsedKey   = "elapsed" // duration since
-	panicKey     = "panic"
-	stackKey     = "stack"
-	sourceKey    = "source"
-	valueKey     = "value"
+	keyError     = "error"
+	keyPanic     = "panic"
+	keyComponent = "component"
+	keyDuration  = "duration"
 )
 
-// Error returns an error attribute; nil is ignored by handlers (empty key).
+// Error возвращает атрибут с текстом ошибки.
+// Можно использовать в любом уровне логирования (slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError).
+//
+//	logger.Error("cannot connect", sl.Error(err))
+//	logger.Info("incorrect http request", sl.Error(err))
 func Error(err error) slog.Attr {
-	if err == nil {
-		return slog.Attr{} // no-op, slog handler skips empty key
-	}
-	return slog.Any(errorKey, err)
+	return slog.String(keyError, err.Error())
 }
 
-// Component returns component attr, e.g. service/module name.
+// Panic возвращает группу атрибутов с сообщением паники и стеком вызова.
+// Подходит для логирования в recover-блоках.
+//
+//	defer func() {
+//		if r := recover(); r != nil {
+//			logger.Error("panic recovered", sl.Panic(r))
+//		}
+//	}()
+func Panic(recovered any) slog.Attr {
+	return slog.Group(keyPanic,
+		slog.Any("message", recovered),
+		slog.Any("stack", string(debug.Stack())),
+	)
+}
+
+// Component возвращает атрибут с именем компонента.
+//
+//	logger := slog.With(sl.Component("integrations.grpc.SomeService"))
+//	logger.Info("start request")
 func Component(component string) slog.Attr {
-	return slog.String(componentKey, component)
+	return slog.String(keyComponent, component)
 }
 
-// Method returns method/function/operation attr.
-func Method(method string) slog.Attr {
-	return slog.String(methodKey, method)
+// Duration возвращает атрибут с временем выполнения.
+//
+//	start := time.Now()
+//	end := time.Since(start)
+//	logger.Info("done", sl.Duration(end))
+func Duration(t time.Duration) slog.Attr {
+	return slog.Duration(keyDuration, t)
 }
 
-// Elapsed logs duration since 'since' as a proper time.Duration value.
-// Use for timings/latency: slog.Duration("elapsed", time.Since(since)).
-func Elapsed(since time.Time) slog.Attr {
-	return slog.Duration(elapsedKey, time.Since(since))
-}
-
-// Panic groups panic value + stack trace for easier filtering in JSON logs.
-func Panic(p any) slog.Attr {
-	return slog.Group(panicKey,
-		slog.Any(valueKey, p),
-		slog.String(stackKey, string(debug.Stack())),
-	)
-}
-
-// Source groups component & method neatly under one key.
-func Source(component, method string) slog.Attr {
-	return slog.Group(sourceKey,
-		slog.String(componentKey, component),
-		slog.String(methodKey, method),
-	)
-}
-
-// Field is a tiny helper to create arbitrary fields without importing slog in callers.
-func Field(key string, value any) slog.Attr {
-	return slog.Any(key, value)
+// Since возвращает slog.Attr с длительностью,
+// прошедшей с момента t0. Удобно использовать в defer для логирования времени выполнения.
+//
+//	start := time.Now()
+//	defer logger.Info("done", sl.Since(start))
+func Since(t0 time.Time) slog.Attr {
+	return slog.Duration(keyDuration, time.Since(t0))
 }
